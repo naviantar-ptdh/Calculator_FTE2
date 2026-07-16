@@ -692,38 +692,11 @@ def load_backend_data(source: Optional[Union[str, pd.DataFrame]] = None) -> Back
 
 
 # =========================================================
-# (v2) Loader generik untuk sheet lain (Sheet9 / Hasil Staff) — mengikuti pola
-# fallback yang sama seperti load_backend_data(), supaya SATU sumber kebenaran
-# (config.py) dan tidak ada URL/gid hardcoded ganda.
+# (v2) Loader Sheet9 (Unit) & Hasil Staff (Staff) — mengikuti pola fallback yang
+# sama seperti load_backend_data(): coba fetch via nama tab dulu, kalau gagal
+# atau kontennya tidak sesuai (mis. ke-fetch tab yang salah), coba lagi via gid
+# spesifik tab tsb (config.UNIT_SHEET_GID / config.STAFF_SHEET_GID).
 # =========================================================
-def _load_raw_sheet(
-    sheet_name: str,
-    path_env: str,
-    url_env: str,
-    default_fname: str,
-    error_label: str,
-) -> pd.DataFrame:
-    env_path = os.getenv(path_env)
-    if env_path and os.path.exists(env_path):
-        return pd.read_csv(env_path, header=None, dtype=str)
-
-    env_url = os.getenv(url_env)
-    if env_url:
-        return pd.read_csv(env_url, header=None, dtype=str)
-
-    if os.path.exists(default_fname):
-        return pd.read_csv(default_fname, header=None, dtype=str)
-
-    from config import SPREADSHEET_ID, gsheet_csv_url
-    url = gsheet_csv_url(sheet_name, SPREADSHEET_ID)
-    try:
-        return pd.read_csv(url, header=None, dtype=str)
-    except Exception as e:
-        raise BackendDataError(
-            f"Gagal memuat sheet '{sheet_name}' ({error_label}) dari Google Sheets.\n{e}\n\n"
-            f"Cek: (1) sheet sudah di-share 'Anyone with the link - Viewer', "
-            f"(2) nama tab persis '{sheet_name}'."
-        ) from e
 
 
 def load_unit_data(source: Optional[Union[str, pd.DataFrame]] = None) -> Dict[str, List[UnitRow]]:
@@ -797,7 +770,12 @@ def load_unit_data(source: Optional[Union[str, pd.DataFrame]] = None) -> Dict[st
 
 
 def load_staff_data(source: Optional[Union[str, pd.DataFrame]] = None) -> List[StaffRow]:
-    """Muat data FTE Staff (Hasil Staff, v2)."""
+    """Muat data FTE Staff (Hasil Staff, v2).
+
+    Urutan sumber sama seperti load_unit_data(): DataFrame/str langsung -> env
+    STAFF_CSV_PATH -> env STAFF_CSV_URL -> file lokal default -> Google Sheets
+    (nama tab) -> Google Sheets (gid fallback, config.STAFF_SHEET_GID).
+    """
     try:
         if isinstance(source, pd.DataFrame):
             return parse_staff_sheet(source)
@@ -805,11 +783,54 @@ def load_staff_data(source: Optional[Union[str, pd.DataFrame]] = None) -> List[S
             raw = pd.read_csv(source.strip(), header=None, dtype=str)
             return parse_staff_sheet(raw)
 
-        from config import STAFF_SHEET_NAME
-        raw = _load_raw_sheet(
-            STAFF_SHEET_NAME, "STAFF_CSV_PATH", "STAFF_CSV_URL", "FTE - Hasil Staff.csv", "Hasil Staff"
+        env_path = os.getenv("STAFF_CSV_PATH")
+        if env_path and os.path.exists(env_path):
+            return parse_staff_sheet(pd.read_csv(env_path, header=None, dtype=str))
+
+        env_url = os.getenv("STAFF_CSV_URL")
+        if env_url:
+            return parse_staff_sheet(pd.read_csv(env_url, header=None, dtype=str))
+
+        default_fname = "FTE - Hasil Staff.csv"
+        if os.path.exists(default_fname):
+            return parse_staff_sheet(pd.read_csv(default_fname, header=None, dtype=str))
+
+        from config import SPREADSHEET_ID, STAFF_SHEET_NAME, gsheet_csv_url
+        try:
+            from config import STAFF_SHEET_GID
+        except ImportError:
+            STAFF_SHEET_GID = None
+
+        errors = []
+        try:
+            raw = pd.read_csv(gsheet_csv_url(STAFF_SHEET_NAME, SPREADSHEET_ID), header=None, dtype=str)
+            return parse_staff_sheet(raw)
+        except BackendDataError as e:
+            errors.append(f"[gviz sheet-name url, sheet='{STAFF_SHEET_NAME}'] {e}")
+        except Exception as e:
+            errors.append(f"[gviz sheet-name url, sheet='{STAFF_SHEET_NAME}'] gagal fetch: {e}")
+
+        if STAFF_SHEET_GID:
+            fallback_url = (
+                f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}"
+                f"/export?format=csv&gid={STAFF_SHEET_GID}"
+            )
+            try:
+                raw = pd.read_csv(fallback_url, header=None, dtype=str)
+                return parse_staff_sheet(raw)
+            except BackendDataError as e:
+                errors.append(f"[export gid={STAFF_SHEET_GID} fallback] {e}")
+            except Exception as e:
+                errors.append(f"[export gid={STAFF_SHEET_GID} fallback] gagal fetch: {e}")
+
+        raise BackendDataError(
+            "Gagal memuat sheet Hasil Staff dari Google Sheets.\n\n"
+            + "\n\n".join(errors)
+            + "\n\nCek: (1) sheet sudah di-share 'Anyone with the link - Viewer', "
+              f"(2) nama tab persis '{STAFF_SHEET_NAME}' (config.STAFF_SHEET_NAME), "
+              "(3) isi config.STAFF_SHEET_GID dengan gid tab 'Hasil Staff' "
+              "(buka tab-nya, lihat angka setelah 'gid=' di URL) untuk fallback otomatis."
         )
-        return parse_staff_sheet(raw)
     except BackendDataError:
         raise
     except Exception as e:
