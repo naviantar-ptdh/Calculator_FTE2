@@ -727,7 +727,14 @@ def _load_raw_sheet(
 
 
 def load_unit_data(source: Optional[Union[str, pd.DataFrame]] = None) -> Dict[str, List[UnitRow]]:
-    """Muat data Unit per Site (Sheet9, v2)."""
+    """Muat data Unit per Site (Sheet9, v2).
+
+    Urutan sumber: DataFrame/str langsung -> env UNIT_CSV_PATH -> env UNIT_CSV_URL ->
+    file lokal default -> Google Sheets (nama tab) -> Google Sheets (gid fallback,
+    config.UNIT_SHEET_GID) — pola sama seperti load_backend_data(), supaya kalau
+    fetch berbasis nama tab gagal atau (tanpa error) mengembalikan tab yang salah,
+    tetap ada percobaan kedua yang tidak bergantung nama tab.
+    """
     try:
         if isinstance(source, pd.DataFrame):
             return parse_unit_sheet(source)
@@ -735,11 +742,53 @@ def load_unit_data(source: Optional[Union[str, pd.DataFrame]] = None) -> Dict[st
             raw = pd.read_csv(source.strip(), header=None, dtype=str)
             return parse_unit_sheet(raw)
 
-        from config import UNIT_SHEET_NAME
-        raw = _load_raw_sheet(
-            UNIT_SHEET_NAME, "UNIT_CSV_PATH", "UNIT_CSV_URL", "FTE - Sheet9.csv", "data Unit"
+        env_path = os.getenv("UNIT_CSV_PATH")
+        if env_path and os.path.exists(env_path):
+            return parse_unit_sheet(pd.read_csv(env_path, header=None, dtype=str))
+
+        env_url = os.getenv("UNIT_CSV_URL")
+        if env_url:
+            return parse_unit_sheet(pd.read_csv(env_url, header=None, dtype=str))
+
+        default_fname = "FTE - Sheet9.csv"
+        if os.path.exists(default_fname):
+            return parse_unit_sheet(pd.read_csv(default_fname, header=None, dtype=str))
+
+        from config import SPREADSHEET_ID, UNIT_SHEET_NAME, gsheet_csv_url
+        try:
+            from config import UNIT_SHEET_GID
+        except ImportError:
+            UNIT_SHEET_GID = None
+
+        errors = []
+        try:
+            raw = pd.read_csv(gsheet_csv_url(UNIT_SHEET_NAME, SPREADSHEET_ID), header=None, dtype=str)
+            return parse_unit_sheet(raw)
+        except BackendDataError as e:
+            errors.append(f"[gviz sheet-name url, sheet='{UNIT_SHEET_NAME}'] {e}")
+        except Exception as e:
+            errors.append(f"[gviz sheet-name url, sheet='{UNIT_SHEET_NAME}'] gagal fetch: {e}")
+
+        if UNIT_SHEET_GID:
+            fallback_url = (
+                f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}"
+                f"/export?format=csv&gid={UNIT_SHEET_GID}"
+            )
+            try:
+                raw = pd.read_csv(fallback_url, header=None, dtype=str)
+                return parse_unit_sheet(raw)
+            except BackendDataError as e:
+                errors.append(f"[export gid={UNIT_SHEET_GID} fallback] {e}")
+            except Exception as e:
+                errors.append(f"[export gid={UNIT_SHEET_GID} fallback] gagal fetch: {e}")
+
+        raise BackendDataError(
+            "Gagal memuat sheet Unit (Sheet9) dari Google Sheets.\n\n"
+            + "\n\n".join(errors)
+            + "\n\nCek: (1) sheet sudah di-share 'Anyone with the link - Viewer', "
+              f"(2) nama tab persis '{UNIT_SHEET_NAME}' (config.UNIT_SHEET_NAME), "
+              "(3) gid fallback di config.UNIT_SHEET_GID masih sesuai tab Sheet9 yang sebenarnya."
         )
-        return parse_unit_sheet(raw)
     except BackendDataError:
         raise
     except Exception as e:
