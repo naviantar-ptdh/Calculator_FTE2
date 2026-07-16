@@ -8,6 +8,11 @@ BACKEND_SHEET_NAME = "BACKEND"
 UNIT_SHEET_NAME = "Sheet9"           # data input Unit per site (v2, auto-lookup)
 STAFF_SHEET_NAME = "Hasil Staff"     # data FTE Staff (Foreman/SPV/Planner) per site (v2)
 
+# Fallback gid untuk tab Unit (Sheet9), dipakai jika fetch berbasis nama tab
+# ("sheet=Sheet9") gagal/mengambil tab yang salah. Ambil dari URL saat tab itu
+# dibuka: https://docs.google.com/spreadsheets/d/<ID>/edit?gid=<GID_INI>
+UNIT_SHEET_GID = "433093577"
+
 # Password sederhana untuk membuka mode edit tabel unit (edit hanya sesi ini, tidak
 # tersimpan ke Google Sheets, dan akan kembali normal jika halaman di-refresh).
 UNIT_EDIT_PASSWORD = "DHRising"
