@@ -240,7 +240,7 @@ def main():
         backend = get_backend()
     except BackendDataError as exc:
         st.error("Gagal memuat data BACKEND: " + str(exc))
-        st.stop()
+        return
 
     sites = backend.sites or []
 
@@ -267,17 +267,23 @@ def main():
 
     # ---------------- Reset state saat Site berubah ----------------
     if st.session_state.get("current_site") != site:
-        st.session_state.current_site = site
         try:
             units_all = get_units()
         except BackendDataError as exc:
             st.error("Gagal memuat data Unit (Sheet9): " + str(exc))
-            st.stop()
+            return
+        st.session_state.current_site = site
         rows = units_all.get(site, [])
         st.session_state.working_units_df = units_to_df(rows)
         st.session_state.page_num = 0
         st.session_state.calc_result = None
         st.session_state.edit_unlocked = False
+
+    # Guard defensif: kalau karena alasan apa pun working_units_df belum ada
+    # (mis. rerun aneh / cache lama), jangan crash — tampilkan pesan & hentikan.
+    if "working_units_df" not in st.session_state:
+        st.warning("Data unit belum termuat. Silakan pilih Site lagi atau klik 'Clear Cache & Reload Semua Data'.")
+        return
 
     # ---------------- Header unit + kunci password kecil ----------------
     col_title, col_lock = st.columns([6, 1])

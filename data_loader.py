@@ -477,39 +477,60 @@ class UnitRow:
     pa: float
 
 
-def _find_site_blocks(df: pd.DataFrame) -> List["tuple[str, int]"]:
-    """Scan baris 1 (judul Site) & baris 2 (header 'Category') untuk menemukan
-    kolom awal tiap blok Site, tanpa asumsi jumlah/posisi blok."""
+def _find_site_blocks(df: pd.DataFrame) -> "tuple[List[tuple], int]":
+    """Cari baris header (baris yang punya sel 'Category') di mana pun posisinya
+    (tidak diasumsikan selalu baris index 1), lalu untuk tiap kolom 'Category'
+    cari judul Site di baris tepat di atasnya — mundur ke kiri jika sel judul
+    kosong akibat merge cell di Google Sheets, dibatasi sampai kolom blok
+    sebelumnya supaya tidak "mencuri" judul blok lain.
+
+    Return: (blocks, header_row) dengan blocks = [(site_title, category_col), ...].
+    """
+    header_row = None
+    cat_cols: List[int] = []
+    max_scan = min(len(df), 20)
+    for r in range(max_scan):
+        cols = [c for c in range(df.shape[1]) if _col_text(df, r, c).strip().lower() == "category"]
+        if cols:
+            header_row = r
+            cat_cols = cols
+            break
+    if header_row is None or header_row == 0:
+        return [], -1
+
+    title_row = header_row - 1
     blocks = []
-    if len(df) < 2:
-        return blocks
-    for col in range(df.shape[1]):
-        title = _col_text(df, 0, col)
+    for i, col in enumerate(cat_cols):
+        left_bound = cat_cols[i - 1] + 1 if i > 0 else 0
+        title = ""
+        for back in range(col, left_bound - 1, -1):
+            t = _col_text(df, title_row, back)
+            if t:
+                title = t
+                break
         if not title:
-            continue
-        sub_header = _col_text(df, 1, col).strip().lower()
-        if sub_header == "category":
-            blocks.append((title, col))
-    return blocks
+            title = f"Site{i + 1}"
+        blocks.append((title, col))
+    return blocks, header_row
 
 
 def parse_unit_sheet(raw: pd.DataFrame) -> Dict[str, List[UnitRow]]:
     """Parse sheet 'Sheet9' (data input Unit per Site, v2).
     Mengembalikan dict: Site -> list of UnitRow (Category, Jenis Unit, Jumlah Unit, PA)."""
     df = raw.copy().reset_index(drop=True)
-    blocks = _find_site_blocks(df)
+    blocks, header_row = _find_site_blocks(df)
     if not blocks:
         html_issue = _looks_like_html_or_error(df)
         detail = f"\n\nKemungkinan penyebab: {html_issue}" if html_issue else ""
         raise BackendDataError(
-            "Tidak ditemukan blok Site (judul + header 'Category') pada sheet Unit."
+            "Tidak ditemukan blok Site (baris berisi header 'Category') pada sheet Unit."
             f"{detail}"
         )
 
     result: Dict[str, List[UnitRow]] = {}
     for site, col in blocks:
         rows: List[UnitRow] = []
-        r = 2
+        r = header_row + 1
         while r < len(df):
             cat = _col_text(df, r, col)
             if cat == "" or cat.lower() == "nan":
