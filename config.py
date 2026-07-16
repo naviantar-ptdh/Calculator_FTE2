@@ -13,6 +13,10 @@ STAFF_SHEET_NAME = "Hasil Staff"     # data FTE Staff (Foreman/SPV/Planner) per 
 # dibuka: https://docs.google.com/spreadsheets/d/<ID>/edit?gid=<GID_INI>
 UNIT_SHEET_GID = "433093577"
 
+# Sama seperti UNIT_SHEET_GID di atas, tapi untuk tab "Hasil Staff". Ambil dari
+# URL saat tab itu dibuka: https://docs.google.com/spreadsheets/d/<ID>/edit?gid=<GID_INI>
+STAFF_SHEET_GID = "997738201"
+
 # Password sederhana untuk membuka mode edit tabel unit (edit hanya sesi ini, tidak
 # tersimpan ke Google Sheets, dan akan kembali normal jika halaman di-refresh).
 UNIT_EDIT_PASSWORD = "DHRising"
