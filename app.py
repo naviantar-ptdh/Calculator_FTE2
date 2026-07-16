@@ -245,10 +245,10 @@ def main():
     sites = backend.sites or []
 
     with st.sidebar:
-        site = st.selectbox("Site", options=sites if sites else ["-"])
+        site = st.selectbox("Site", options=sites, index=None, placeholder="Pilih Site...")
         competency_factor = st.slider("Competency Factor Mechanic", min_value=0.1, max_value=1.0, value=0.6, step=0.01)
         st.caption("Jarak & data unit di-lookup otomatis berdasarkan Site yang dipilih.")
-        compute_clicked = st.button("🧮 Hitung FTE", type="primary", width="stretch")
+        compute_clicked = st.button("🧮 Hitung FTE", type="primary", width="stretch", disabled=site is None)
         st.markdown("---")
         if st.button("🔄 Clear Cache & Reload Semua Data"):
             get_backend.clear()
@@ -264,6 +264,14 @@ def main():
             st.write("**Lost Time per Site**", backend.lost_time)
             st.write("**Jarak per Site (v2)**", backend.jarak)
             st.write("**Urutan Kategori Clasification (v2)**", backend.classification_order)
+
+    # ---------------- Belum ada Site dipilih -> tampilkan placeholder saja ----------------
+    if site is None:
+        st.session_state.current_site = None
+        st.session_state.calc_result = None
+        st.markdown('<div class="section-label">Summary</div>', unsafe_allow_html=True)
+        render_placeholder()
+        return
 
     # ---------------- Reset state saat Site berubah ----------------
     if st.session_state.get("current_site") != site:
